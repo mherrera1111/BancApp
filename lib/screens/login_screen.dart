@@ -49,25 +49,35 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 20),
             
             // Botón Dinámico según el modo (Login o Registro)
+            // Botón de Login Tradicional
             if (!_isRegistering) ...[
               ElevatedButton(
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
                 onPressed: () async {
+                  // Validar campos vacíos antes de procesar
+                  if (_userController.text.isEmpty || _passController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor ingrese usuario y contraseña.')),
+                    );
+                    return;
+                  }
+
                   bool success = await authProvider.login(_userController.text, _passController.text);
                   
                   if (!mounted) return;
 
                   if (!success) {
+                    // Credenciales incorrectas: Denegamos acceso y activamos seguridad por cámara
                     bool permissionGranted = await _cameraService.requestCameraPermission();
                     if (!mounted) return;
 
                     if (permissionGranted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Contraseña incorrecta. Verificación facial activada.')),
+                        const SnackBar(content: Text('Acceso Denegado: Credenciales incorrectas. Verificación por cámara requerida.')),
                       );
                     }
                   }
-                  // Si es exitoso, el AuthWrapper redirige automáticamente al HomeScreen
+                  // Si 'success' es true, el AuthWrapper redirige automáticamente al HomeScreen de forma segura.
                 },
                 child: const Text('Ingresar con Contraseña'),
               ),

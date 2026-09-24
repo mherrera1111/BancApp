@@ -14,10 +14,10 @@ class AuthProvider extends ChangeNotifier {
   String? get userName => _userName;
   bool get requiresFacialAuth => _requiresFacialAuth;
 
-  // Verificar estado de sesión al iniciar la app
+  // Verificar estado al iniciar la app
   Future<void> checkSession() async {
     final token = await _storageService.getToken();
-    final user = await _storageService.getUser();
+    final user = await _storageService.getActiveUser();
 
     if (token != null && user != null) {
       _isAuthenticated = true;
@@ -26,39 +26,57 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // Simulación de Login Tradicional
+  // Validación de Login (Valida Admin o el Usuario Registrado)
   Future<bool> login(String user, String password) async {
-    // Para pruebas, asumiremos que si existe un usuario registrado o es el admin por defecto
-    if ((user == "admin" && password == "123456") || (user.isNotEmpty && password.isNotEmpty)) {
+    if (user.isEmpty || password.isEmpty) {
+      _isAuthenticated = false;
+      _requiresFacialAuth = false;
+      notifyListeners();
+      return false;
+    }
+
+    // Consultar el usuario y contraseña registrados en el almacenamiento seguro
+    String? regUser = await _storageService.getRegisteredUser();
+    String? regPass = await _storageService.getRegisteredPass();
+
+    bool isValidAdmin = (user == "admin" && password == "123456");
+    bool isValidRegisteredUser = (user == regUser && password == regPass);
+
+    if (isValidAdmin || isValidRegisteredUser) {
       _isAuthenticated = true;
       _userName = user;
       _requiresFacialAuth = false;
       
-      await _storageService.saveSession("secure_token_xyz_999", user);
+      // Creamos la sesión activa para este usuario
+      await _storageService.saveActiveSession("token_${user.hashCode}", user);
       notifyListeners();
       return true;
     } else {
+      _isAuthenticated = false;
+      _userName = null;
       _requiresFacialAuth = true;
       notifyListeners();
       return false;
     }
   }
 
-  // Método de Registro con validación de cámara (Biometría)
+  // Método de Registro 
   Future<bool> registerUser(String user, String password) async {
-    // 1. Validar e invocar el permiso de la cámara para la captura facial de seguridad
+    if (user.isEmpty || password.isEmpty) return false;
+
+    // Solicitar permiso explícito de cámara para la biometría
     bool permissionGranted = await _cameraService.requestCameraPermission();
     if (!permissionGranted) {
-      return false; // Si deniega la cámara, el registro de seguridad falla
+      return false; 
     }
 
-    // Inicializar y capturar la cámara de forma segura
     await _cameraService.initCamera();
+    
+    // 1. Guardar las credenciales permanentemente
+    await _storageService.saveRegisteredUser(user, password);
+    // 2. Iniciar la sesión activa inmediatamente
+    await _storageService.saveActiveSession("token_${user.hashCode}", user);
 
-    // 2. Guardar las credenciales cifradas localmente en el SecureStorage
-    await _storageService.saveSession("secure_token_registered_${user.hashCode}", user);
-
-    // 3. Actualizar el estado global de la sesión
     _isAuthenticated = true;
     _userName = user;
     _requiresFacialAuth = false;
@@ -67,10 +85,10 @@ class AuthProvider extends ChangeNotifier {
     return true;
   }
 
-  // Cierre de sesión seguro y limpieza de recursos de hardware
+  // Cierre de sesión seguro que preserva la cuenta registrada
   Future<void> logout() async {
-    await _storageService.clearSession();
-    _cameraService.disposeCamera(); // Libera la cámara para ahorrar batería y memoria
+    await _storageService.clearActiveSession(); // Borra la sesión pero mantiene el registro
+    _cameraService.disposeCamera(); // Libera hardware de la cámara
     _isAuthenticated = false;
     _userName = null;
     _requiresFacialAuth = false;
